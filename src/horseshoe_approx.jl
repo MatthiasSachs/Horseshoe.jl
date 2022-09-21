@@ -73,8 +73,7 @@ function update_approx!(hs::HorseShoeApprox, ξmin::T ) where {T<:Real}
     hs.Ws = @view hs.W[:,mask];
     hs.WWs = @view hs.WW[mask,mask];
     hs.βs = @view hs.β[mask]
-    # hs.woodbury = (hs.sδ < hs.N/2)
-    hs.woodbury = false
+    hs.woodbury = (hs.sδ < hs.N/2)
 end
 
 function update_decomps!(hs::HorseShoeApprox)
@@ -134,76 +133,6 @@ function step!(hs::HorseShoeApprox)
 end
 
 
-# function gibbs_ξ!(hs::HorseShoeApprox)
-#     """
-#     - No requirement for cA and cM and depedent variables to be up-to-date
-#     - Update ends with all values cA, cM and z_Minv_z consistent with values of η and ξ
-#     """
-#     ξ_prop  = exp(rand(Normal(log(hs.ξ),hs.s))); #exp(log(hs.ξ) + hs.s * randn())
-#     ξ_min = min(hs.ξ, ξ_prop)
-#     update_approx!(hs, ξ_min)
-#     # Todo: 1) precomputed decompositions? 2) Replace Woodbury identity by SVD
-#     if hs.woodbury
-#         WWs = transpose(hs.Ws)*hs.Ws
-#         WDs  = hs.Ws * Diagonal(1.0./sqrt.(hs.ηs))
-#         sDWDs = svd(WDs'*WDs); 
-        
-#         @show hs.ξ
-#         chol_complete = false
-#         cA = nothing
-#         while(chol_complete)
-#             try 
-#                 cA  = cholesky(Diagonal(hs.ξ * hs.ηs) + WWs) # 1) can use precomputed but need to marke sure that woodbury approximation was also used in previous iteration
-#                 chol_complete = true
-#             catch
-#                 hs.ηmin*=10
-#                 @warn "ηmin was increased to $(hs.ηmin) to ensure positive definiteness"
-#                 if hs.ηmin >= 1 
-#                     @error "hs.ηmin = $(hs.ηmin) is too large"
-#                 end
-#             end
-#         end
-#         z_Minv_z = dot(hs.z, hs.z - hs.Ws * (cA \ (transpose(hs.Ws)*hs.z))) # 2) use SVD result instead
-#         ldetM = sum( log.(1.0.+ (sDWDs.S)/hs.ξ))
-#         # show ldetM maybe this is enough to decide whether 
-#         # solution 2: adaptively increase the value of threshold
-
-#         cA_prop  = cholesky(Diagonal(ξ_prop * hs.ηs) + WWs)
-#         z_Minv_z_prop = dot(hs.z, hs.z - hs.Ws * (cA_prop \ (transpose(hs.Ws)*hs.z)))
-#         ldetM_prop = sum( log.(1.0.+ (sDWDs.S)/ξ_prop))
-#     else
-#         D1Ws = Diagonal(1.0./sqrt.(hs.ηs)) * transpose(hs.Ws)
-#         WDWs = transpose(D1Ws) * D1Ws
-
-#         cM = cholesky(Symmetric(I +  WDWs / hs.ξ) ) 
-#         z_Minv_z = dot(hs.z, cM \ hs.z)
-#         ldetM = logdet(cM)
-
-#         cM_prop = cholesky(Symmetric(I +  WDWs / ξ_prop) ) 
-#         z_Minv_z_prop = dot(hs.z, cM_prop \ hs.z)
-#         ldetM_prop = logdet(cM_prop)
-#     end
-
-#     log_p_prop = log_p_ξ_given_η(ξ_prop, ldetM_prop, z_Minv_z_prop, hs.ω, hs.N)
-#     # log_p_curr = log_p_ξ_given_η( hs.ξ, ldetM, hs.z_Minv_z, hs.ω, hs.N)
-#     log_p_curr = log_p_ξ_given_η( hs.ξ, ldetM, z_Minv_z, hs.ω, hs.N)
-#     log_p_acc  = (log_p_prop - log_p_curr ) + (log(ξ_prop) - log(hs.ξ)) 
-
-#     if rand() < exp(log_p_acc)
-#         # update ξ
-#         hs.ξ = ξ_prop
-#         # update dependent values
-#         hs.cA = (hs.woodbury ? cA_prop : nothing)
-#         hs.cM = (hs.woodbury ? nothing : cM_prop)
-#         hs.z_Minv_z = z_Minv_z_prop
-#     else
-#         # Remove ? Depends on whether update δ-ξ dependencies.
-#         hs.cA = (hs.woodbury ? cA : nothing)
-#         hs.cM = (hs.woodbury ? nothing : cM)
-#         hs.z_Minv_z = z_Minv_z
-#     end
-# end
-
 function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
     """
     - No requirement for cA and cM and depedent variables to be up-to-date
@@ -218,47 +147,11 @@ function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
         WDs  = hs.Ws * Diagonal(1.0./sqrt.(hs.ηs))
         sDWDs = svd(WDs'*WDs); 
         
-        @show hs.ξ
-        local cA
-        while(!(@isdefined cA))
-            cA  = qr(Diagonal(hs.ξ * hs.ηs) + hs.WWs)
-            try 
-                cA  = qr(Diagonal(hs.ξ * hs.ηs) + hs.WWs) # 1) can use precomputed but need to marke sure that woodbury approximation was also used in previous iteration
-            catch
-                @warn "non-pivoted Cholesky decomposition failed"
-                cA = cholesky(Hermitian(Diagonal(hs.ξ * hs.ηs) + hs.WWs), RowMaximum(); tol = 0.0, check = true)
-                # hs.ηmin*=10
-                # @warn "ηmin was increased to $(hs.ηmin) to ensure positive definiteness"
-                # if hs.ηmin >= 1 
-                #     @error "hs.ηmin = $(hs.ηmin) is too large"
-                # end
-                # for j in 1:length(hs.η)
-                #     hs.η[j]= max(hs.η[j], hs.ηmin)
-                # end
-            end
-        end
+        cA  = qr(Diagonal(hs.ξ * hs.ηs) + hs.WWs)
         z_Minv_z = dot(hs.z, hs.z - hs.Ws * (cA \ (transpose(hs.Ws)*hs.z))) # 2) use SVD result instead
         ldetM = sum( log.(1.0.+ (sDWDs.S)/hs.ξ))
-        # show ldetM maybe this is enough to decide whether 
-        # solution 2: adaptively increase the value of threshold
-        local cA_prop
-        while(!(@isdefined cA_prop))
-            cA_prop  = qr(Diagonal(ξ_prop * hs.ηs) + hs.WWs)
-            try 
-                cA_prop  = qr(Diagonal(ξ_prop * hs.ηs) + hs.WWs)
-            catch
-                @warn "non-pivoted Cholesky decomposition failed"
-                cA_prop = cholesky(Hermitian(Diagonal(ξ_prop * hs.ηs) + hs.WWs), RowMaximum(); tol = 0.0, check = true)
-                # hs.ηmin*=10
-                # @warn "ηmin was increased to $(hs.ηmin) to ensure positive definiteness"
-                # if hs.ηmin >= 1 
-                #     @error "hs.ηmin = $(hs.ηmin) is too large"
-                # end
-                # for j in 1:length(hs.η)
-                #     hs.η[j]= max(hs.η[j], hs.ηmin)
-                # end
-            end
-        end
+        
+        cA_prop  = qr(Diagonal(ξ_prop * hs.ηs) + hs.WWs)
         z_Minv_z_prop = dot(hs.z, hs.z - hs.Ws * (cA_prop \ (transpose(hs.Ws)*hs.z)))
         ldetM_prop = sum( log.(1.0.+ (sDWDs.S)/ξ_prop))
     else
@@ -275,7 +168,7 @@ function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
     end
 
     log_p_prop = log_p_ξ_given_η(ξ_prop, ldetM_prop, z_Minv_z_prop, hs.ω, hs.N)
-    log_p_curr = log_p_ξ_given_η( hs.ξ, ldetM, hs.z_Minv_z, hs.ω, hs.N)
+    log_p_curr = log_p_ξ_given_η( hs.ξ, ldetM, z_Minv_z, hs.ω, hs.N)
     log_p_acc  = (log_p_prop - log_p_curr ) + (log(ξ_prop) - log(hs.ξ)) 
 
     if rand() < exp(log_p_acc)

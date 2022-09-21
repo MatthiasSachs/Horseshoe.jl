@@ -6,6 +6,7 @@ using Distributions
 using LinearAlgebra
 using LinearAlgebra: I
 using Distributions: rand
+using ProgressMeter
 """
 This module includes sparse prior models with costume build samplers. 
 """
@@ -34,7 +35,7 @@ TBW
 """
 function run!(outp::OutputScheduler, sampler::Sampler; param0 = nothing)
     init!(sampler, param0)
-    for t = 1:(outp.Nsamples * outp.thinning)
+    @showprogress for t = 1:(outp.Nsamples * outp.thinning)
         step!(sampler)
         feed!(outp, sampler, t)
     end
