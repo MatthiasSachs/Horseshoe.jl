@@ -1,5 +1,6 @@
 
-using Random
+using Horseshoe: HorseShoeApprox, VarOutput, run!
+using Random, Distributions
 
 function synth_data(n,p, σ_true, p_sparsity; rhoX = 0.0, rnd_seed=571)
 
@@ -26,11 +27,7 @@ function synth_data(n,p, σ_true, p_sparsity; rhoX = 0.0, rnd_seed=571)
     return X, y
 end
 
-collect(range(-2,.25, 2))
 
-σ_true = 2.0;
-β_true = randn(p)*(σ_true/10);
-β_true[1:23] = 2.0.^(-range(-2,.25,23));
 ξ_true = 1.0;
 rhoX = 0.0
 p_sparsity = 0.1
@@ -52,7 +49,8 @@ N_samples = 1000
 
 # outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:sδ, :woodbury], N_samples; thinning = 1, nchains=1)
 # run!(outp, hs; param0 = nothing)
-
+chn=nothing
+outp=nothing
 for (n,p) in [(1,100),(100,1), (1,1)]
     @show (n,p)
     X, y = synth_data(n,p, σ_true, p_sparsity; rhoX = rhoX, rnd_seed=571)
@@ -70,6 +68,6 @@ for (n,p) in [(1,100),(100,1), (1,1)]
     
     outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:sδ, :woodbury], N_samples; thinning = 1, nchains=1)
     run!(outp, hs; param0 = nothing)
+    chn = Chains(outp; params_list=[:β])
+    summary(chn)
 end
-                
-                

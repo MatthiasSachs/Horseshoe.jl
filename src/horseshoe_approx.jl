@@ -134,7 +134,7 @@ function step!(hs::HorseShoeApprox)
     gibbs_η!(hs; ηmin = hs.ηmin)
 end
 
-function decomp(A::Matrix, symb::Symbol)
+function decomp(A, symb::Symbol)
     return decomp(Symmetric(A), Val(symb) )
 end
 function decomp(A::Symmetric, ::Val{:qr} )

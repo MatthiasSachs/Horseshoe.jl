@@ -2,39 +2,38 @@
 using MCMCChains
 
 function MCMCChains.Chains(outp::OutputScheduler; params_list=nothing)
+    
+
     if params_list === nothing
         params_list = outp.params_list
+        export_range = outp.params_range
+    else
+        export_range = Dict{Symbol,UnitRange{Int64}}([])
+        first, last = 1, -1
+        for s in params_list
+            @assert s in outp.params_list
+            srange = outp.params_range[s]
+            last = first + length(srange) - 1
+            export_range[s] = first:last
+            first = last + 1
+        end 
     end
-
-    first = 1
-    last = -1
-    export_range = Dict{Symbol,NamedTuple{(:first, :last), Tuple{Int64, Int64}}}([])
-    export_len = Dict{Symbol,Int}([])
-    len = 0
-    for s in params_list
-        @assert s in outp.params_list
-        g = outp.params_range[s]
-        export_len[s] = (g.last - g.first) + 1
-        len += export_len[s]
-        last = first + export_len[s]  - 1
-        export_range[s] = (first=first,last=last)
-        first = last + 1
-    end 
-    Nsamples, nparams, nchains = size(outp.vals,1), last, size(outp.vals,3) 
+    nparams = sum(length(srange) for srange in values(export_range))
     
+    Nsamples, nchains = size(outp.vals,1), size(outp.vals,3) 
+    
+    # generate symbols of variable names for output
     names = Symbol[]
     for s in params_list
-        append!(names, Symbol.(s, 1:export_len[s]))
+        append!(names, Symbol.(s, 1:length(export_range[s])))
     end
+
     vals = zeros(Nsamples, nparams, nchains)
     for s in params_list
-        ex_first, ex_last = export_range[s].first, export_range[s].last
-        first, last = outp.params_range[s].first, outp.params_range[s].last
-        vals[:,ex_first:ex_last,:] = outp.vals[:,first:last,:] 
+        vals[:,export_range[s],:] = outp.vals[:,outp.params_range[s],:] 
     end
+
     return Chains(vals, names)
-    # if section_dict !== nothing
-    #     set_section(chn,section_dict)
-    # end
+
 end
 
