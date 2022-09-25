@@ -33,11 +33,13 @@ mutable struct HorseShoeApprox{T} <: HorseShoe
     WWs::AbstractMatrix{T}  # Thresholded version of W'* W
     ηs::AbstractVector{T}   # Thresholded Local precision parameters
     βs::AbstractVector{T}   # Thresholded regression coefficients 
+    decomp_type_w::Symbol
+    decomp_type_nw::Symbol
 end
 #    val::AbstractArray{<:Union{Missing,Real},3},
 
 
-function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4) 
+function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, decomp_type_w=:qr, decomp_type_nw=:qr) 
     N, p = size(W)
     @assert length(z) == N
     if β === nothing
@@ -63,7 +65,7 @@ function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.
     # hs = HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs) 
     # update_approx!(hs, hs.ξ)
     # update_decomps!(hs)
-    return HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs) 
+    return HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs,decomp_type_w,decomp_type_nw) 
 end
 
 function update_approx!(hs::HorseShoeApprox, ξmin::T ) where {T<:Real}
@@ -132,7 +134,21 @@ function step!(hs::HorseShoeApprox)
     gibbs_η!(hs; ηmin = hs.ηmin)
 end
 
-
+function decomp(A::Matrix, symb::Symbol)
+    return decomp(Symmetric(A), Val(symb) )
+end
+function decomp(A::Symmetric, ::Val{:qr} )
+    return qr(A)
+end
+function decomp(A::Symmetric, ::Val{:svd} )
+    return svd(A)
+end
+function decomp(A::Symmetric, ::Val{:cholesky} )
+    return cholesky(A)
+end
+function decomp(A::Symmetric, ::Val{:auto} )
+    return factorize(A)
+end
 function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
     """
     - No requirement for cA and cM and depedent variables to be up-to-date
@@ -147,22 +163,22 @@ function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
         WDs  = hs.Ws * Diagonal(1.0./sqrt.(hs.ηs))
         sDWDs = svd(WDs'*WDs); 
         
-        cA  = qr(Diagonal(hs.ξ * hs.ηs) + hs.WWs)
+        cA  = decomp(Diagonal(hs.ξ * hs.ηs) + hs.WWs, hs.decomp_type_w)
         z_Minv_z = dot(hs.z, hs.z - hs.Ws * (cA \ (transpose(hs.Ws)*hs.z))) # 2) use SVD result instead
         ldetM = sum( log.(1.0.+ (sDWDs.S)/hs.ξ))
         
-        cA_prop  = qr(Diagonal(ξ_prop * hs.ηs) + hs.WWs)
+        cA_prop  = decomp(Diagonal(ξ_prop * hs.ηs) + hs.WWs, hs.decomp_type_w)
         z_Minv_z_prop = dot(hs.z, hs.z - hs.Ws * (cA_prop \ (transpose(hs.Ws)*hs.z)))
         ldetM_prop = sum( log.(1.0.+ (sDWDs.S)/ξ_prop))
     else
         D1Ws = Diagonal(1.0./sqrt.(hs.ηs)) * transpose(hs.Ws)
         WDWs = transpose(D1Ws) * D1Ws
 
-        cM = cholesky(Symmetric(I +  WDWs / hs.ξ) ) 
+        cM = decomp(Symmetric(I +  WDWs / hs.ξ) , hs.decomp_type_nw)
         z_Minv_z = dot(hs.z, cM \ hs.z)
         ldetM = logdet(cM)
 
-        cM_prop = cholesky(Symmetric(I +  WDWs / ξ_prop) ) 
+        cM_prop = decomp(Symmetric(I +  WDWs / ξ_prop) , hs.decomp_type_nw)
         z_Minv_z_prop = dot(hs.z, cM_prop \ hs.z)
         ldetM_prop = logdet(cM_prop)
     end
