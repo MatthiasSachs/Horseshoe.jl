@@ -83,45 +83,4 @@ function lmh_ratio(y::Array{Float64,2},x::Array{Float64,2},Xi::Float64,cM::Linea
     end
 end 
 
-
-
-"""
-Outpuscheduler:
-"""
-
-mutable struct VarOutput <: OutputScheduler
-    vals::Array{Float64,3}
-    params_list::Array{Symbol}
-    params_range::Dict{Symbol,UnitRange{Int64}}
-    Nsamples::Int
-    thinning::Int    
-end
-
-function VarOutput(model, params_list::Vector{Symbol}, Nsamples::Int; thinning = 1, nchains=1)
-    first = 1
-    last = -1
-    params_range = Dict{Symbol,UnitRange{Int64}}([])
-    for s in params_list
-        last = first + length(getfield(model,s)) - 1
-        params_range[s] = first:last
-        first = last + 1
-    end
-    vals = zeros(Nsamples+1, last, nchains)
-    #Chains(vals, params_list, params_range, Nsamples, thinning)
-    return VarOutput(vals, params_list, params_range,Nsamples, thinning)
-end
-
-function feed!(outp::VarOutput, sampler,  t::Int;kchain=1)
-    if t % outp.thinning == 0
-        for s in outp.params_list
-            outp.vals[t ÷ outp.thinning, outp.params_range[s], kchain] .= getfield(sampler,s)
-        end
-    end
-end
-
-function get_var(outp::VarOutput, s::Symbol; kchain=1)
-    @assert s in outp.params_list
-    return outp.vals[:, outp.params_range[s],kchain]
-end
-
 end # module
