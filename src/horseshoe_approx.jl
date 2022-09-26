@@ -35,11 +35,12 @@ mutable struct HorseShoeApprox{T} <: HorseShoe
     βs::AbstractVector{T}   # Thresholded regression coefficients 
     decomp_type_w::Symbol
     decomp_type_nw::Symbol
+    use_woodbury::Bool
 end
 #    val::AbstractArray{<:Union{Missing,Real},3},
 
 
-function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, decomp_type_w=:qr, decomp_type_nw=:qr) 
+function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, decomp_type_w=:qr, decomp_type_nw=:qr,use_woodbury=false) 
     N, p = size(W)
     @assert length(z) == N
     if β === nothing
@@ -65,7 +66,7 @@ function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.
     # hs = HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs) 
     # update_approx!(hs, hs.ξ)
     # update_decomps!(hs)
-    return HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs,decomp_type_w,decomp_type_nw) 
+    return HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs,decomp_type_w,decomp_type_nw,use_woodbury) 
 end
 
 function update_approx!(hs::HorseShoeApprox, ξmin::T ) where {T<:Real}
@@ -75,7 +76,7 @@ function update_approx!(hs::HorseShoeApprox, ξmin::T ) where {T<:Real}
     hs.Ws = @view hs.W[:,mask];
     hs.WWs = @view hs.WW[mask,mask];
     hs.βs = @view hs.β[mask]
-    hs.woodbury = (hs.sδ < hs.N/2)
+    hs.woodbury = (hs.sδ < hs.N/2) && hs.use_woodbury
 end
 
 function update_decomps!(hs::HorseShoeApprox)
