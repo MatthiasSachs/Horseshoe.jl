@@ -1,10 +1,31 @@
 
+struct InMemoryStorage
+    W
+    z
+    msize
+    function InMemoryStorage(W::Matrix,z::Vector, msize)
+        @assert size(W,2) == length(z)
+        return new(W,z, msize) 
+    end
+end
+
+n_obs(d::InMemoryStorage) = size(W,1)
+n_params(d::InMemoryStorage) = size(W,2)
+
+function subsample(d::InMemoryStorage)
+    N = size(X,1)
+    perm = [i for i in 1:N] 
+    batch = Random.shuffle!(perm)[1:msize]
+    return X[batch,:], y[batch]
+end
+
 
 mutable struct HorseShoeApprox{T} <: HorseShoe
     # Observations  / data
+    database
     W::AbstractMatrix{T}    # Design matrix
     z::AbstractVector{T}    # Response vector
-    N::Int                  # Number of Observations
+    N::Int                  # Number of Observations (or mini-batch size if subsampling is employed)
     p::Int                  # Number of regression coefficients
     # Parameters
     β::AbstractVector{T}    # Regression coefficients
@@ -15,68 +36,76 @@ mutable struct HorseShoeApprox{T} <: HorseShoe
     # Hyper Parameters (fixed)
     ω::T                    # hyper-parameters for hyper-prior on σ^2: σ^2 ∼ InvGamma(ω/2,ω/2) 
     s::T                    # Variance of proposal in update of ξ
-    # dependent variables 1: depend on η
-    DW1::AbstractMatrix{T}  # Square root of WDW, i.e., WDW = DW1' * DW1
-    WDW::AbstractMatrix{T}  # Matrix WDW =  W' * Diagonal(1/η) * W
-    WW::AbstractMatrix{T}   # Matrix W' * W
-    #M::AbstractMatrix{T}   # Matrix M = I + ξ^-1 * W' * Diagonal(1/η) * W
-    # dependent variables 2: depend on η and ξ
-    cM                      # Cholesky decomposition of M 
-    cA
     z_Minv_z::T             # value of z' * inv(M) * z
     ηmin::T
     sσ2::T
-    woodbury::Bool
     δ::T 
     sδ::Int
     Ws::AbstractMatrix{T}   # Thresholded Design matrix W
-    WWs::AbstractMatrix{T}  # Thresholded version of W'* W
     ηs::AbstractVector{T}   # Thresholded Local precision parameters
     βs::AbstractVector{T}   # Thresholded regression coefficients 
-    decomp_type_w::Symbol
-    decomp_type_nw::Symbol
-    use_woodbury::Bool
+    mask
+    solver_N::MSolver       # solver used whe N_dominant == true
+    solver_p::MSolver       # solver used whe N_dominant == true
+    p_factor::Real
+    N_dominant::Bool
+    params::Dict
+    # function HorseShoeApprox(W::AbstractMatrix{T}, z::AbstractVector{T}, N::Int,p::Int, β::AbstractVector{T}, η::AbstractVector{T}, ξ::T, σ2::T,
+    #     ω::T, s::T, z_Minv_z::T, ηmin::T, sσ2::T, δ::T, sδ::Int, Ws::AbstractMatrix{T}, ηs::AbstractVector{T}, βs::AbstractVector{T}, mask,
+    #     solver_N::MSolver, solver_p::MSolver, N_dominant::Bool,msize::Int
+    #     )
+    #     hs = new(W, z, N, p, β, η, ξ, σ2,ω, s, z_Minv_z ηmin, sσ2, δ, sδ, Ws, ηs, βs, mask, solver_N, solver_p, N_dominant)
+        
+    #     update!(hs.solver, )
+    # end
 end
 #    val::AbstractArray{<:Union{Missing,Real},3},
 
 
-function HorseShoeApprox(W,z; β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, decomp_type_w=:qr, decomp_type_nw=:qr,use_woodbury=false) 
+function HorseShoeApprox(;W=nothing, z=nothing, database=nothing, 
+    β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, 
+    s=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, 
+    params=nothing) 
+    if (W !== nothing || z !== nothing) && database !==nothing
+        @warn "Either provide a database with optional argument database, or an explicit designnmatrix and obervation vector
+        by specifying the two optional arguments W and z."
+    elseif database !== nothing 
+        W, z = subsample(database)
+    end
     N, p = size(W)
     @assert length(z) == N
     if β === nothing
-        β = ones(p)
+    β = ones(p)
     end
     if η === nothing
-        η = ones(p)
+    η = ones(p)
     end
-    DW1 = broadcast(*,1.0./sqrt.(η),transpose(W));
-    WDW = DW1'* DW1;
-    WW =  W' * W
-    # M = Symmetric(I +  hs.WDW / hs.ξ)
-    # Mchol = cholesky(Symmetric(I +  WDW / ξ))
-    #z_Minv_z = dot(z, Mchol \ z)
-    cM = nothing
-    cA = nothing
+
     z_Minv_z = -1.0
     sδ = p
     Ws = @view W[:,:]
-    WWs = @view WW[:,:]
     ηs = @view η[:]
     βs = @view β[:]
-    # hs = HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs) 
-    # update_approx!(hs, hs.ξ)
-    # update_decomps!(hs)
-    return HorseShoeApprox(W, z, N, p, β, η, ξ, σ2, ω, s, DW1, WDW, WW, cM, cA, z_Minv_z, ηmin, sσ2, false, δ, sδ, Ws, WWs, ηs, βs,decomp_type_w,decomp_type_nw,use_woodbury) 
+
+    solver_N = generateMsolver(params[:solver_N])
+    solver_p = generateMsolver(params[:solver_p])
+    # if (:solver_p in keys(params[:solver_p]) == false
+    #     params[:solver_p] = Dict(:solver => :Mcholesky, :decomp_type => :auto)     
+    # end
+    p_factor = (:p_factor in keys(params) ? params[:p_factor] : 2)
+    hs = HorseShoeApprox(database, W, z, N, p, β, η, ξ, σ2,ω, s, z_Minv_z, ηmin, sσ2, δ, sδ, Ws, ηs, βs, nothing, solver_N, solver_p, p_factor, false, params)
+    return hs
 end
+
 
 function update_approx!(hs::HorseShoeApprox, ξmin::T ) where {T<:Real}
     mask = (1.0./(hs.η*ξmin)) .> hs.δ;
     hs.sδ = sum(mask); # Rank of WDσW'
     hs.ηs = @view hs.η[mask]; 
     hs.Ws = @view hs.W[:,mask];
-    hs.WWs = @view hs.WW[mask,mask];
     hs.βs = @view hs.β[mask]
-    hs.woodbury = (hs.sδ < hs.N/2) && hs.use_woodbury
+    hs.mask = mask
+    #hs.woodbury = (hs.sδ < hs.N/2) && hs.use_woodbury
 end
 
 function update_decomps!(hs::HorseShoeApprox)
@@ -128,8 +157,10 @@ end
 
 
 function step!(hs::HorseShoeApprox)
+    if hs.database !== nothing 
+        hs.W, hs.z = subsample(hs.database)
+    end
     gibbs_ξ!(hs)
-    #update_decomps!(hs)
     gibbs_σ2!(hs)
     gibbs_β!(hs)
     gibbs_η!(hs; ηmin = hs.ηmin)
@@ -150,7 +181,8 @@ end
 function decomp(A::Symmetric, ::Val{:auto} )
     return factorize(A)
 end
-function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
+
+function gibbs_ξ!(hs::HorseShoeApprox)
     """
     - No requirement for cA and cM and depedent variables to be up-to-date
     - Update ends with all values cA, cM and z_Minv_z consistent with values of η and ξ
@@ -158,30 +190,26 @@ function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
     ξ_prop  = exp(rand(Normal(log(hs.ξ),hs.s))); #exp(log(hs.ξ) + hs.s * randn())
     ξ_min = min(hs.ξ, ξ_prop)
     update_approx!(hs, ξ_min)
-    # Todo: 1) precomputed decompositions? 2) Replace Woodbury identity by SVD
-    if hs.woodbury
-        #WWs = transpose(hs.Ws)*hs.Ws
+
+    N = size(hs.Ws,1)
+    p = length(hs.ηs)
+
+    hs.N_dominant = hs.p_factor * p < N 
+
+    if hs.N_dominant
+        update!(hs.solver_N, hs, hs.ξ, ξ_prop)
         WDs  = hs.Ws * Diagonal(1.0./sqrt.(hs.ηs))
         sDWDs = svd(WDs'*WDs); 
-        
-        cA  = decomp(Diagonal(hs.ξ * hs.ηs) + hs.WWs, hs.decomp_type_w)
-        z_Minv_z = dot(hs.z, hs.z - hs.Ws * (cA \ (transpose(hs.Ws)*hs.z))) # 2) use SVD result instead
         ldetM = sum( log.(1.0.+ (sDWDs.S)/hs.ξ))
-        
-        cA_prop  = decomp(Diagonal(ξ_prop * hs.ηs) + hs.WWs, hs.decomp_type_w)
-        z_Minv_z_prop = dot(hs.z, hs.z - hs.Ws * (cA_prop \ (transpose(hs.Ws)*hs.z)))
         ldetM_prop = sum( log.(1.0.+ (sDWDs.S)/ξ_prop))
+        z_Minv_z = dot(hs.z, Minv(hs.solver_N, hs.z, false))
+        z_Minv_z_prop = dot(hs.z, Minv(hs.solver_N, hs.z, true))
     else
-        D1Ws = Diagonal(1.0./sqrt.(hs.ηs)) * transpose(hs.Ws)
-        WDWs = transpose(D1Ws) * D1Ws
-
-        cM = decomp(Symmetric(I +  WDWs / hs.ξ) , hs.decomp_type_nw)
-        z_Minv_z = dot(hs.z, cM \ hs.z)
-        ldetM = logdet(cM)
-
-        cM_prop = decomp(Symmetric(I +  WDWs / ξ_prop) , hs.decomp_type_nw)
-        z_Minv_z_prop = dot(hs.z, cM_prop \ hs.z)
-        ldetM_prop = logdet(cM_prop)
+        update!(hs.solver_p, hs, hs.ξ, ξ_prop)
+        ldetM = logdet(hs.solver_p, false)
+        ldetM_prop = logdet(hs.solver_p, true)
+        z_Minv_z = dot(hs.z, Minv(hs.solver_p, hs.z, false))
+        z_Minv_z_prop = dot(hs.z, Minv(hs.solver_p, hs.z, true))
     end
 
     log_p_prop = log_p_ξ_given_η(ξ_prop, ldetM_prop, z_Minv_z_prop, hs.ω, hs.N)
@@ -189,28 +217,22 @@ function Horseshoe.gibbs_ξ!(hs::HorseShoeApprox)
     log_p_acc  = (log_p_prop - log_p_curr ) + (log(ξ_prop) - log(hs.ξ)) 
 
     if rand() < exp(log_p_acc)
-        # update ξ
         hs.ξ = ξ_prop
-        # update dependent values
-        hs.cA = (hs.woodbury ? cA_prop : nothing)
-        hs.cM = (hs.woodbury ? nothing : cM_prop)
+        hs.N_dominant ? accept!(hs.solver_N) : accept!(hs.solver_p)
         hs.z_Minv_z = z_Minv_z_prop
     else
-        # Remove ? Depends on whether update δ-ξ dependencies.
-        hs.cA = (hs.woodbury ? cA : nothing)
-        hs.cM = (hs.woodbury ? nothing : cM)
+        # no need to update decompostion if proposal was rejected
         hs.z_Minv_z = z_Minv_z
     end
 end
+
 
 function gibbs_β!(hs::HorseShoeApprox)
     u = 1.0./sqrt.(hs.η*hs.ξ) .* randn(hs.p)
     v = hs.W * u + randn(hs.N)
     σ = sqrt(hs.σ2)
-    #WDW = comp_WDW(hs.W, hs.η) # doesn't need to recomputed if hs.WDW up-to-date
-    #M = Symmetric(I +  WDW / hs.ξ) # should be up to date? If yes, use hs.M instead 
-    #Mchol = cholesky(M)
-    vstar = Minv(hs, hs.z/σ - v) 
+    solver =  ( hs.N_dominant ? hs.solver_N : hs.solver_p)
+    vstar =  Minv(solver, hs.z/σ - v)
     hs.β[:] = σ * u
     hs.βs[:] += σ * Diagonal(1.0./(hs.ηs*hs.ξ)) * transpose(hs.Ws) * vstar 
 end

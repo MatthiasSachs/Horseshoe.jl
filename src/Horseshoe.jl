@@ -7,6 +7,7 @@ using LinearAlgebra
 using LinearAlgebra: I
 using Distributions: rand
 using ProgressMeter
+using Krylov: lsqr
 """
 This module includes sparse prior models with costume build samplers. 
 """
@@ -14,12 +15,18 @@ This module includes sparse prior models with costume build samplers.
 abstract type OutputScheduler end
 abstract type Sampler end
 abstract type HorseShoe <: Sampler end
-
-
+abstract type MSolver end
 include("horseshoe_utils.jl")
 include("horseshoe_exact.jl")
+
+function generateMsolver(params_solver::Dict)
+    return eval(params_solver[:solver])(params_solver) 
+end
+
 include("horseshoe_approx.jl")
 include("horseshoe_io.jl")
+
+include("linalg_solvers.jl")
 
 function init!(sampler::Sampler, param0=nothing)
     if param0 !== nothing
@@ -47,14 +54,15 @@ Functions shared among all Horseshoe sampler implementations
 """
 
 function gibbs_σ2!(hs::HorseShoe)
+    N = size(hs.W, 1)
     if hs.sσ2 < 0
-        hs.σ2 = 1/rand(Gamma((hs.ω + hs.N)/2.0,2.0/(hs.ω + hs.z_Minv_z)));
+        hs.σ2 = 1/rand(Gamma((hs.ω + N)/2.0,2.0/(hs.ω + hs.z_Minv_z)));
     else
         a0, b0 = hs.ω, hs.ω
         ssr = hs.z_Minv_z;
         prop_k = exp(rand(Normal(log(1.0/hs.σ2), hs.sσ2)));
-        l_prop = (hs.N+a0-2.0)/2.0*log(prop_k)-prop_k*(ssr+b0)/2.0;
-        l_curr = (hs.N+a0-2.0)/2.0*log(1.0./hs.σ2)-(1.0/hs.σ2)*(ssr+b0)/2;
+        l_prop = (N+a0-2.0)/2.0*log(prop_k)-prop_k*(ssr+b0)/2.0;
+        l_curr = (N+a0-2.0)/2.0*log(1.0./hs.σ2)-(1.0/hs.σ2)*(ssr+b0)/2;
         l_ar = (l_prop-l_curr) + (log(prop_k)-log(1.0/hs.σ2));
         l_ar = l_ar;
         acc_s = rand()<exp(l_ar);
@@ -62,7 +70,7 @@ function gibbs_σ2!(hs::HorseShoe)
             hs.σ2 = 1/prop_k;
         end
     end
-    #rand(Distributions.InverseGamma( .5*(hs.ω + hs.N), .5*(hs.ω + hs.z_Minv_z) ))
+    #rand(Distributions.InverseGamma( .5*(hs.ω + N), .5*(hs.ω + hs.z_Minv_z) ))
 end
 
 function log_p_ξ_given_η( ξ::T, logdetM::T, z_Minv_z::T, ω::T, N::Int) where {T <: Real}
