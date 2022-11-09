@@ -47,7 +47,7 @@ N_samples = 1000
 #     decomp_type_w = :qr,
 #     decomp_type_nw = :cholesky) 
 
-# outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:sδ, :woodbury], N_samples; thinning = 1, nchains=1)
+# outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:pδ, :woodbury], N_samples; thinning = 1, nchains=1)
 # run!(outp, hs; param0 = nothing)
 chn=nothing
 outp=nothing
@@ -66,7 +66,7 @@ for (n,p) in [(1,100),(100,1), (1,1)]
                 decomp_type_nw = :cholesky) 
 
     
-    outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:sδ, :woodbury], N_samples; thinning = 1, nchains=1)
+    outp = VarOutput(hs, [:β, :η, :ξ, :σ2,:pδ, :woodbury], N_samples; thinning = 1, nchains=1)
     run!(outp, hs; param0 = nothing)
     chn = Chains(outp; params_list=[:β])
     summary(chn)

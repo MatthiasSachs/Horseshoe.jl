@@ -15,18 +15,19 @@ This module includes sparse prior models with costume build samplers.
 abstract type OutputScheduler end
 abstract type Sampler end
 abstract type HorseShoe <: Sampler end
-abstract type MSolver end
+
+include("linalg_solvers.jl")
+
 include("horseshoe_utils.jl")
 include("horseshoe_exact.jl")
 
-function generateMsolver(params_solver::Dict)
-    return eval(params_solver[:solver])(params_solver) 
-end
 
 include("horseshoe_approx.jl")
 include("horseshoe_io.jl")
 
-include("linalg_solvers.jl")
+
+
+include("horseshoe_interface.jl")
 
 function init!(sampler::Sampler, param0=nothing)
     if param0 !== nothing
@@ -45,6 +46,7 @@ function run!(outp::OutputScheduler, sampler::Sampler; param0 = nothing)
     @showprogress for t = 1:(outp.Nsamples * outp.thinning)
         step!(sampler)
         feed!(outp, sampler, t)
+        @show sampler.pδ/sampler.p
     end
     return outp
 end
