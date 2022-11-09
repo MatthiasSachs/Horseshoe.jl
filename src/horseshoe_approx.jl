@@ -70,7 +70,7 @@ function HorseShoeApprox(;W=nothing, z=nothing, database=nothing,
     β=nothing, η = nothing, ξ=1.0, σ2 = 1.0, ω=1.0, 
     ξ_fixed=false, σ2_fixed=false,
     sξ=1.0, ηmin=0.0, sσ2=-1.0, δ=1E-4, 
-    p_factor = 2.0, solver_N= MLinAlg.Cholesky(), solver_p= MLinAlg.QR())
+    p_factor = 2.0, solver_p= MLinAlg.Cholesky(), solver_N= MLinAlg.QR())
     if (W !== nothing || z !== nothing) && database !==nothing
         @warn "Either provide a database with optional argument database, or an explicit designnmatrix and obervation vector
         by specifying the two optional arguments W and z."

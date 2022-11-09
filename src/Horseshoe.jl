@@ -46,7 +46,7 @@ function run!(outp::OutputScheduler, sampler::Sampler; param0 = nothing)
     @showprogress for t = 1:(outp.Nsamples * outp.thinning)
         step!(sampler)
         feed!(outp, sampler, t)
-        @show sampler.pδ/sampler.p
+        #@show sampler.pδ/sampler.p
     end
     return outp
 end
