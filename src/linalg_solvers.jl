@@ -27,6 +27,7 @@ Woodbury() = Woodbury(nothing, nothing, nothing,nothing, :qr)
 #     return Woodbury(fA,fA_prop, Ws, decomp_type)
 # end
 
+
 function update!(solver::Woodbury, hs, ξ, ξ_prop)
     if solver.WW === nothing
         solver.WW = hs.W'*hs.W
