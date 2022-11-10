@@ -39,7 +39,7 @@ function update!(solver::Woodbury, hs, ξ, ξ_prop)
 end
 
 function accept!(solver::Woodbury)
-    solver.fa = solver.fa_prop
+    solver.fA = solver.fA_prop
 end
 
 function Minv(solver::Woodbury, x::AbstractVector{T}, prop=false) where {T<:Real}
