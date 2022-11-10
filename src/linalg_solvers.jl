@@ -13,10 +13,11 @@ mutable struct Woodbury <: MSolver
     fA
     fA_prop
     Ws
+    WW
     decomp_type
 end
-Woodbury(params::Dict) =  Woodbury(nothing, nothing, nothing, params)
-Woodbury() = Woodbury(nothing, nothing, nothing, :qr)
+Woodbury(params::Dict) =  Woodbury(nothing, nothing, nothing, nothing, params[Symbol(params_solver["decomp_type"])])
+Woodbury() = Woodbury(nothing, nothing, nothing,nothing, :qr)
 
 # function Woodbury(hs::HorseShoe, ξ, ξ_prop, params) 
 #     decomp_type = params[:decomp_type]
@@ -27,9 +28,13 @@ Woodbury() = Woodbury(nothing, nothing, nothing, :qr)
 # end
 
 function update!(solver::Woodbury, hs, ξ, ξ_prop)
+    if solver.WW === nothing
+        solver.WW = hs.W'*hs.W
+    end
     solver.Ws = hs.Ws
-    solver.fA  = decomp(Diagonal(ξ * hs.ηs) + solver.WWs, solver.decomp_type)
-    solver.fA_prop  = decomp(Diagonal(ξ_prop * hs.ηs) + hs.WWs, solver.decomp_type)
+    WWs = solver.WW[hs.mask,hs.mask]
+    solver.fA  = decomp(Diagonal(ξ * hs.ηs) + WWs, solver.decomp_type)
+    solver.fA_prop  = decomp(Diagonal(ξ_prop * hs.ηs) + WWs, solver.decomp_type)
 end
 
 function accept!(solver::Woodbury)
