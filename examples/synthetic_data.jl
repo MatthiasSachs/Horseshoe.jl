@@ -85,3 +85,4 @@ PyPlot.savefig(joinpath("", "./plots/regression_1.pdf"), bbox_inches="tight")
 #%%
 using MCMCChains
 chn = Chains(outp, params_list = [:β])
+
