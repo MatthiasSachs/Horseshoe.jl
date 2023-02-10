@@ -1,7 +1,7 @@
 
 using StatsBase
 
-function sample_h(ε::T; a=.5, b=1.5, maxattempts = 10^2) where {T<:Real} # todo: include warning for too many attempts
+function sample_h(ε::T; a=.5, b=1.5, maxattempts = 10^3) where {T<:Real} # todo: include warning for too many attempts
     """
     sample from hL(x) ∝ 1/(1+x)  e^(-ε x)
     """
